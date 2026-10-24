@@ -1,0 +1,8 @@
+# Binaries
+camstream
+camstream_videoonly
+
+# Object files and temporary artifacts
+*.o
+*.so
+*.out
