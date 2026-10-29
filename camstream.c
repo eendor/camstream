@@ -1,6 +1,6 @@
 /* camstream.c - laptop webcam + mic -> LAN stream for OBS (C, V4L2 + ALSA)
  * Build: gcc -O2 -Wall -pthread -o camstream camstream.c -lasound
- * Run:   camstream [/dev/video0] [port] [width] [height] [alsa-mic]
+ * Run:   camstream [/dev/video0] [port] [width] [height] [alsa-mic [fps]]
  * OBS:   Media Source, uncheck "Local File", Input: http://<ip>:8080/
  *        (video + mic audio, Matroska). http://<ip>:8080/mjpeg = video only.
  */
@@ -61,7 +61,7 @@ static void push_packet(int type, int64_t ts, const void *d, size_t n) {
 }
 
 /* ---------- camera ---------- */
-static int open_cam(const char *dev, int w, int h) {
+static int open_cam(const char *dev, int w, int h, int fps) {
     int fd = open(dev, O_RDWR);
     if (fd < 0) die("open camera");
     struct v4l2_format f = {0};
@@ -75,9 +75,9 @@ static int open_cam(const char *dev, int w, int h) {
     struct v4l2_streamparm sp = {0};
     sp.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     sp.parm.capture.timeperframe.numerator = 1;
-    sp.parm.capture.timeperframe.denominator = 30;
+    sp.parm.capture.timeperframe.denominator = fps;
     xioctl(fd, VIDIOC_S_PARM, &sp);
-    /* keep a steady 30 fps: stop auto-exposure from slowing frames in dim light */
+    /* keep a steady frame rate: stop auto-exposure from slowing frames in dim light */
     struct v4l2_control ctl = { V4L2_CID_EXPOSURE_AUTO_PRIORITY, 0 };
     xioctl(fd, VIDIOC_S_CTRL, &ctl);
     printf("Camera: %dx%d MJPEG\n", vid_w, vid_h);
@@ -308,13 +308,15 @@ out:
 int main(int argc, char **argv) {
     const char *dev = argc > 1 ? argv[1] : "/dev/video0";
     int port = argc > 2 ? atoi(argv[2]) : 8080;
-    int w = argc > 3 ? atoi(argv[3]) : 1280;
-    int h = argc > 4 ? atoi(argv[4]) : 720;
+    int w = argc > 3 ? atoi(argv[3]) : 640;
+    int h = argc > 4 ? atoi(argv[4]) : 480;
     const char *mic = argc > 5 ? argv[5] : "default";
+    int fps = argc > 6 ? atoi(argv[6]) : 30;
+    if (fps <= 0) fps = 30;
     signal(SIGPIPE, SIG_IGN);
     setvbuf(stdout, NULL, _IOLBF, 0);
 
-    static int camfd; camfd = open_cam(dev, w, h);
+    static int camfd; camfd = open_cam(dev, w, h, fps);
     snd_pcm_t *pcm = open_mic(mic);
     have_audio = pcm != NULL;
     pthread_t t;
@@ -349,7 +351,7 @@ int main(int argc, char **argv) {
         int s = accept(ls, (struct sockaddr *)&ca, &cl);
         if (s < 0) continue;
         setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
-        int sndbuf = 256 * 1024;   /* small send buffer so stale frames don't pile up */
+        int sndbuf = 64 * 1024;    /* small send buffer so stale frames don't pile up on WiFi */
         setsockopt(s, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof sndbuf);
         char ipb[INET_ADDRSTRLEN]; inet_ntop(AF_INET, &ca.sin_addr, ipb, sizeof ipb);
         printf("Client %s connected\n", ipb);

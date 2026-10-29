@@ -1,6 +1,7 @@
 /* camstream.c - V4L2 MJPEG webcam -> HTTP MJPEG stream (pure C, no deps)
  * Build: gcc -O2 -Wall -pthread -o camstream camstream.c
  * Run:   ./camstream [/dev/video0] [port] [width] [height]
+ *        On WiFi, lower the resolution (e.g. 640x480) to cut bitrate and latency.
  * OBS:   Media Source, uncheck "Local File", Input: http://<ip>:8080/
  */
 #include <stdio.h>
@@ -129,8 +130,8 @@ out:
 int main(int argc, char **argv) {
     const char *dev = argc > 1 ? argv[1] : "/dev/video0";
     int port = argc > 2 ? atoi(argv[2]) : 8080;
-    int w = argc > 3 ? atoi(argv[3]) : 1280;
-    int h = argc > 4 ? atoi(argv[4]) : 720;
+    int w = argc > 3 ? atoi(argv[3]) : 640;
+    int h = argc > 4 ? atoi(argv[4]) : 480;
     signal(SIGPIPE, SIG_IGN);
 
     static int camfd; camfd = open_cam(dev, w, h);
@@ -160,6 +161,8 @@ int main(int argc, char **argv) {
         int s = accept(ls, (struct sockaddr *)&ca, &cl);
         if (s < 0) continue;
         setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+        int sndbuf = 64 * 1024;   /* small send buffer so stale frames don't pile up on WiFi */
+        setsockopt(s, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof sndbuf);
         unsigned char *ip = (unsigned char *)&ca.sin_addr;
         printf("Client %u.%u.%u.%u connected\n", ip[0], ip[1], ip[2], ip[3]);
         pthread_t t; pthread_create(&t, NULL, client_loop, (void *)(long)s);
