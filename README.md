@@ -62,9 +62,26 @@ make install
 ### Defaults:
 - `device`: `/dev/video0`
 - `port`: `8080`
-- `width`: `1280`
-- `height`: `720`
+- `width`: `640`
+- `height`: `480`
 - `alsa-mic`: `default`
+- `fps`: `30`
+
+WiFi links have much less headroom than wired LAN: MJPEG at 720p can easily exceed
+the available airtime, which shows up as retransmissions and buffering delay.
+For wireless streaming prefer:
+
+```bash
+# Lower resolution and frame rate for WiFi
+./camstream /dev/video0 8080 640 480 default 15
+
+# Video-only endpoint is the lowest-delay option for OBS Browser Source
+./camstream_videoonly /dev/video0 8080 640 480 15
+```
+
+In OBS, set **Network Buffering** to minimal and use the `/mjpeg` endpoint for
+video-only sources. The send buffer per client is capped at 64 KB so a slow
+client can't queue up many stale frames.
 
 ### Examples:
 ```bash
